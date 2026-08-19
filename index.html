@@ -133,6 +133,24 @@ body {
 }
 .stamp dd { margin: 0; font-size: 12.5px; color: var(--ink-2); }
 
+/* ============================================================ watch list */
+#watch-panel table { width: 100%; border-collapse: collapse; }
+#watch-panel th, #watch-panel td {
+  padding: 10px 12px; border-bottom: 1px solid var(--border-soft); text-align: left;
+  white-space: nowrap;
+}
+#watch-panel th {
+  font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600;
+}
+#watch-panel td.num, #watch-panel th.num { text-align: right; font-variant-numeric: tabular-nums; }
+#watch-panel tbody tr:last-child td { border-bottom: 0; }
+#watch-panel tbody tr:hover { background: var(--plane); }
+#watch-panel .sub-cell {
+  font-size: 11px; color: var(--muted); font-weight: 400;
+  white-space: normal; max-width: 320px; margin-top: 2px;
+}
+
 /* ============================================================ averages */
 /* Sits directly under the chart, above the controls: the run-rate reading of
    whatever the chart is currently showing. */
@@ -490,6 +508,16 @@ table.data tfoot td { font-weight: 640; border-top: 1px solid var(--border); bor
         <button type="button" id="dt-clear" hidden>Clear</button>
       </div>
     </div>
+  </section>
+
+  <!-- A fixed watch list, independent of the filters above: these three 10x16
+       packs are tracked in their own right. -->
+  <section class="panel" id="watch-panel">
+    <header>
+      <h2>Watch list &mdash; last 30 days</h2>
+      <p class="note" id="watch-note">The three 10&times;16 packs, against the 30 days before them. Not affected by the filters above.</p>
+    </header>
+    <div class="body scroll"><div id="watch"></div></div>
   </section>
 
   <section class="panel">
@@ -873,6 +901,80 @@ function renderCompare(m) {
     return `<div class="avg"><div class="k">${esc(c.k)}</div><div class="v num">${esc(c.v)}</div>${d}
       <div class="sub${c.cov ? ' short' : ''}">${esc(c.cov || c.sub)}</div></div>`;
   }).join('');
+}
+
+/* ---------------------------------------------------------- watch list */
+/* Three named products followed in their own right. Deliberately ignores the
+   Measure / Break-down / Blend controls and the date range - the point of a
+   watch list is that it reads the same however the rest of the page is set. */
+const WATCH = [
+  {asin: 'B00L3E5FC0', label: 'Classic'},
+  {asin: 'B00SYO0N5G', label: 'Mild'},
+  {asin: 'B00SYO2M0U', label: 'Strong'}
+];
+
+function watchWindow(asin, endT, days) {
+  let units = 0, bags = 0, revenue = 0, n = 0, sold = 0;
+  for (let t = endT - (days - 1) * dayMs; t <= endT; t += dayMs) {
+    const bucket = idxAll.get(new Date(t).toISOString().slice(0, 10));
+    if (!bucket) continue;                 // no data collected - not a zero day
+    n++;
+    const r = bucket.get(asin);
+    if (!r) continue;
+    units += +r.units; bags += +r.bags; revenue += +r.revenue;
+    if (+r.units > 0) sold++;
+  }
+  return {units, bags, revenue, n, sold};
+}
+
+function renderWatch() {
+  const end = utc(maxDate);
+  const rows = WATCH.map(w => {
+    const cur = watchWindow(w.asin, end, 30);
+    const prev = watchWindow(w.asin, end - 30 * dayMs, 30);
+    const p = byAsin.get(w.asin) || {};
+    // Daily series for the sparkline, over the covered days only.
+    const series = [];
+    for (let t = end - 29 * dayMs; t <= end; t += dayMs) {
+      const b = idxAll.get(new Date(t).toISOString().slice(0, 10));
+      if (!b) continue;
+      const r = b.get(w.asin);
+      series.push(r ? +r.units : 0);
+    }
+    return {...w, cur, prev, series, title: p.title || ''};
+  });
+
+  const pctCell = (a, b) => {
+    if (!b) return '<td class="num">—</td>';
+    const d = a / b - 1;
+    const up = d >= 0;
+    return `<td class="num" style="color:var(${up ? '--good' : '--warn'});font-weight:600">
+      ${up ? '▲' : '▼'} ${Math.abs(d * 100).toFixed(0)}%</td>`;
+  };
+
+  $('watch').innerHTML = `<table><thead><tr>
+      <th>Product</th><th>Trend</th>
+      <th class="num">Units</th><th class="num">vs prev 30d</th>
+      <th class="num">Bags</th><th class="num">Revenue</th>
+      <th class="num">Units / day</th><th class="num">Days sold</th>
+    </tr></thead><tbody>` +
+    rows.map(r => `<tr>
+      <td><b>${esc(r.asin)}</b> &middot; ${esc(r.label)}<div class="sub-cell">${esc(shortLabel(r.title))}</div></td>
+      <td>${sparkline(r.series.length ? r.series : [0], '--s-1')}</td>
+      <td class="num">${int(r.cur.units)}</td>
+      ${pctCell(r.cur.units, r.prev.units)}
+      <td class="num">${bagFmt(r.cur.bags)}</td>
+      <td class="num">${money(r.cur.revenue)}</td>
+      <td class="num">${r.cur.n ? (r.cur.units / r.cur.n).toFixed(1) : '—'}</td>
+      <td class="num">${r.cur.sold} / ${r.cur.n}</td>
+    </tr>`).join('') + '</tbody></table>';
+
+  // State the coverage rather than implying 30 clean days.
+  const cov = rows[0] ? rows[0].cur.n : 0;
+  $('watch-note').textContent =
+    `The three 10×16 packs over the 30 days to ${maxDate}, against the 30 days before them` +
+    (cov < 30 ? ` · ${cov} of those 30 days hold data` : '') +
+    '. Not affected by the filters above.';
 }
 
 function renderAvgs(m) {
@@ -1407,6 +1509,7 @@ function render() {
   $('ctl-family').style.display = splitBy === 'asin' ? '' : 'none';
 
   renderTiles(m); renderLegend(m); renderChart(m); renderAvgs(m); renderCompare(m);
+  renderWatch();
   renderMatrix(m); renderTable(m);
 }
 
