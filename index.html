@@ -133,6 +133,13 @@ body {
 }
 .stamp dd { margin: 0; font-size: 12.5px; color: var(--ink-2); }
 
+/* The heatmap's measure switch sits above its grid, not inside the panel
+   header, and needs a bottom border instead of the top one .controls carries. */
+.controls.mx-controls {
+  border-top: 0; border-bottom: 1px solid var(--border-soft);
+  padding: 11px 18px;
+}
+
 /* ============================================================ watch list */
 #watch-panel table { width: 100%; border-collapse: collapse; }
 #watch-panel th, #watch-panel td {
@@ -531,8 +538,6 @@ table.data tfoot td { font-weight: 640; border-top: 1px solid var(--border); bor
     <header>
       <h2 id="mx-title">Bags per day &times; blend</h2>
       <p class="note">Every row against every day in range. Empty cells are real zeros — nothing sold that day.</p>
-      <!-- This grid carries its own measure, separate from the chart above. -->
-      <div class="seg" id="seg-mx" role="group" aria-label="Heatmap measure"></div>
       <div class="ramp" aria-hidden="true">
         <span>0</span>
         <i style="background:var(--seq-0)"></i><i style="background:var(--seq-1)"></i><i style="background:var(--seq-2)"></i>
@@ -541,6 +546,14 @@ table.data tfoot td { font-weight: 640; border-top: 1px solid var(--border); bor
         <span id="ramp-max">max</span>
       </div>
     </header>
+    <!-- Its own control row rather than a chip in the header: squeezed between
+         the note and the colour ramp the switch was there but unfindable. -->
+    <div class="controls mx-controls">
+      <div class="ctl">
+        <span>Show</span>
+        <div class="seg" id="seg-mx" role="group" aria-label="Heatmap measure"></div>
+      </div>
+    </div>
     <div class="body scroll"><div id="matrix"></div></div>
   </section>
 
