@@ -529,8 +529,10 @@ table.data tfoot td { font-weight: 640; border-top: 1px solid var(--border); bor
 
   <section class="panel">
     <header>
-      <h2 id="mx-title">Units per day &times; blend</h2>
+      <h2 id="mx-title">Bags per day &times; blend</h2>
       <p class="note">Every row against every day in range. Empty cells are real zeros — nothing sold that day.</p>
+      <!-- This grid carries its own measure, separate from the chart above. -->
+      <div class="seg" id="seg-mx" role="group" aria-label="Heatmap measure"></div>
       <div class="ramp" aria-hidden="true">
         <span>0</span>
         <i style="background:var(--seq-0)"></i><i style="background:var(--seq-1)"></i><i style="background:var(--seq-2)"></i>
@@ -1259,6 +1261,11 @@ function renderChart(m) {
 let chartHide = null;
 
 /* ---------------------------------------------------------- matrix */
+/* The heatmap has its own measure, independent of the chart above: bags is the
+   unit the business plans in, so that is what it opens on, but units stays one
+   click away. */
+let mxMetric = 'bags';
+
 function renderMatrix(m) {
   const {dates, idx, visible} = m;
   const colors = activeColors();
@@ -1271,15 +1278,20 @@ function renderMatrix(m) {
   const bagsOf = (g, d) => g.members.reduce((t, a) => {
     const r = idx.get(d).get(a); return t + (r ? (+r.bags || 0) : 0);
   }, 0);
+  // The value the grid is actually drawn from.
+  const val = mxMetric === 'bags' ? bagsOf : units;
+  // Bags are fractional - 0.33 of a 48-pod bag is a real sale and must not
+  // print as a blank cell the way an integer format would render it.
+  const fmt = mxMetric === 'bags' ? bagFmt : int;
 
   // Only rows that actually moved inside the range — an all-zero row is noise,
   // and the totals table already lists the full roster.
-  const order = visible.filter(g => dates.some(d => units(g, d) > 0));
+  const order = visible.filter(g => dates.some(d => val(g, d) > 0));
   if (!dates.length || !order.length) { $('matrix').innerHTML = '<div class="empty">No sales in this range.</div>'; return; }
 
   let max = 0;
-  for (const d of dates) for (const g of order) max = Math.max(max, units(g, d));
-  $('ramp-max').textContent = max ? int(max) + ' units' : 'max';
+  for (const d of dates) for (const g of order) max = Math.max(max, val(g, d));
+  $('ramp-max').textContent = max ? fmt(max) + ' ' + mxMetric : 'max';
   const bucket = v => {
     if (v <= 0) return 0;
     if (max <= 1) return 6;
@@ -1298,18 +1310,20 @@ function renderMatrix(m) {
     h += `<tr><th scope="row"><span class="prod"><span class="sw" style="background:var(${colors.get(g.key) || '--s-other'})"></span>
       <span class="nm">${esc(g.label)}</span>${sub}</span></th>`;
     for (const d of dates) {
-      const v = units(g, d); tot += v;
+      const v = val(g, d); tot += v;
       const b = bucket(v);
       // A real zero recedes to the surface — it is the absence of a mark, not
       // the lightest step of the ramp, which would read as a small value.
       const bg = b === 0 ? 'transparent' : `var(${SEQ[b]})`;
       const ink = b >= 4 ? 'var(--seq-ink-hi)' : (b === 0 ? 'var(--muted)' : 'var(--seq-ink-lo)');
-      const rv = revOf(g, d), bg2 = bagsOf(g, d);
+      // The tooltip carries both measures whichever one is on screen, so
+      // switching is never needed just to read a single cell.
+      const u = units(g, d), bg2 = bagsOf(g, d), rv = revOf(g, d);
       h += `<td><div class="cell" data-z="${v ? 1 : 0}" style="background:${bg};color:${ink}"
-        title="${esc(g.label)} — ${esc(weekday(d))} ${esc(d)}: ${v} unit${v === 1 ? '' : 's'}${
-          bg2 ? ' · ' + int(bg2) + ' bags' : ''}${rv ? ' · ' + money2(rv) : ''}">${v || ''}</div></td>`;
+        title="${esc(g.label)} — ${esc(weekday(d))} ${esc(d)}: ${u} unit${u === 1 ? '' : 's'}${
+          bg2 ? ' · ' + bagFmt(bg2) + ' bags' : ''}${rv ? ' · ' + money2(rv) : ''}">${v ? fmt(v) : ''}</div></td>`;
     }
-    h += `<td class="rowtot">${int(tot)}</td></tr>`;
+    h += `<td class="rowtot">${fmt(tot)}</td></tr>`;
   }
   h += '</tbody></table>';
   $('matrix').innerHTML = h;
@@ -1508,7 +1522,7 @@ function render() {
   METRICS.bags.title    = 'Bags per day, split by ' + unit;
   METRICS.units.title   = 'Units per day, split by ' + unit;
   METRICS.orders.title  = 'Order lines per day, split by ' + unit;
-  $('mx-title').textContent = 'Units per day × ' + unit;
+  $('mx-title').textContent = (mxMetric === 'bags' ? 'Bags' : 'Units') + ' per day × ' + unit;
   $('tb-title').textContent = splitBy === 'asin'
     ? 'Product totals for the selected range'
     : 'Blend totals for the selected range';
@@ -1613,6 +1627,10 @@ function boot() {
       b.setAttribute('aria-pressed', String(+b.dataset.v === DEFAULT_RANGE)));
     render();
   });
+  // The heatmap's own Bags/Units switch. Separate state from the chart's
+  // Measure control on purpose - changing one must not move the other.
+  seg($('seg-mx'), [{v: 'bags', t: 'Bags'}, {v: 'units', t: 'Units'}],
+      () => mxMetric, v => mxMetric = v);
   seg($('seg-metric'), [{v: 'revenue', t: 'Revenue'}, {v: 'bags', t: 'Bags'},
                         {v: 'units', t: 'Units'}, {v: 'orders', t: 'Order lines'}],
       () => metric, v => metric = v);
